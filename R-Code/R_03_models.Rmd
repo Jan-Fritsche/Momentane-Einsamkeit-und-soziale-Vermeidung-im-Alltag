@@ -1,0 +1,1197 @@
+---
+title: "R/03_models"
+author: "Jan Fritsche"
+date: "2026-06-11"
+output: html_document
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+# Benötigte Pakete
+needed_packages <- c(
+  "dplyr",
+  "lmerTest",
+  "performance",
+  "see", "tibble", "patchwork"
+)
+
+# Fehlende Pakete installieren
+for (pkg in needed_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg)
+  }
+}
+
+# Pakete laden
+library(dplyr)
+library(lmerTest)
+library(performance)
+library(see)
+library(tibble)
+library(patchwork)
+```
+
+```{message=FALSE, warning=FALSE}
+#' Analysedatensatz laden
+#'
+#' Lädt den vorbereiteten Analysedatensatz aus der gespeicherten RDS-Datei.
+#'
+#' @param path Pfad zur gespeicherten RDS-Datei.
+#'
+#' @return Der vorbereitete Analysedatensatz.
+load_analysis_data <- function(
+  path = "D:/Studium/B.Sc/LMU/BA Arbeit/Daten/Lonliness and Rejection Sensitivity/dat_analysis.rds"
+) {
+  readRDS(path)
+}
+
+dat_analysis <- load_analysis_data()
+```
+
+```{message=FALSE, warning=FALSE}
+#' H1-Modell schätzen
+#'
+#' Schätzt ein lineares Mehrebenenmodell mit sozialer Vermeidung als abhängiger
+#' Variable. Prädiktoren sind Within-Person-Einsamkeit am Vortag,
+#' Between-Person-Einsamkeit am Vortag und soziale Vermeidung am Vortag.
+#' Personen werden über einen zufälligen Intercept berücksichtigt.
+#'
+#' @param dat_analysis Analysedatensatz.
+#'
+#' @return Ein geschätztes lmer-Modell.
+fit_h1_model <- function(dat_analysis) {
+  lmerTest::lmer(
+    avoid_day ~
+      loneliness_mean_day_lag1_round_wp +
+      loneliness_mean_day_lag1_round_bp +
+      avoid_day_lag1 +
+      (1 | subj_id),
+    data = dat_analysis,
+    REML = FALSE
+  )
+}
+
+#' Fixed Effects mit 95%-Konfidenzintervallen ausgeben
+#'
+#' Erstellt eine Tabelle der Fixed Effects mit Schätzwert,
+#' Standardfehler, Freiheitsgraden, t-Wert, p-Wert und 95%-Konfidenzintervall.
+#'
+#' @param model Geschätztes lmer-Modell.
+#'
+#' @return Ein Tibble mit Fixed Effects und 95%-Konfidenzintervallen.
+summarise_fixed_effects <- function(model) {
+  fixed_effects <- as.data.frame(summary(model)$coefficients) %>%
+    tibble::rownames_to_column("term")
+  
+  confidence_intervals <- as.data.frame(
+    confint(model, parm = "beta_", method = "Wald")
+  ) %>%
+    tibble::rownames_to_column("term") %>%
+    rename(
+      CI_low = `2.5 %`,
+      CI_high = `97.5 %`
+    )
+  
+  fixed_effects %>%
+    left_join(confidence_intervals, by = "term") %>%
+    rename(
+      b = Estimate,
+      SE = `Std. Error`,
+      df = df,
+      t = `t value`,
+      p = `Pr(>|t|)`
+    ) %>%
+    mutate(
+      across(c(b, SE, df, t, p, CI_low, CI_high), ~ round(.x, 3))
+    )
+}
+
+#' Varianzaufklärung des Modells berechnen
+#'
+#' Berechnet marginales und konditionales R² nach Nakagawa. Das marginale R²
+#' beschreibt die erklärte Varianz durch die Fixed Effects. Das konditionale R²
+#' beschreibt die erklärte Varianz durch Fixed und Random Effects zusammen.
+#'
+#' @param model Geschätztes lmer-Modell.
+#'
+#' @return Ein Tibble mit marginalem und konditionalem R².
+calculate_model_r2 <- function(model) {
+  r2_values <- performance::r2_nakagawa(model)
+  
+  tibble::tibble(
+    marginal_r2 = round(r2_values$R2_marginal, 3),
+    conditional_r2 = round(r2_values$R2_conditional, 3)
+  )
+}
+
+model_h1 <- fit_h1_model(dat_analysis)
+
+summary(model_h1)
+
+h1_fixed_effects <- summarise_fixed_effects(model_h1)
+h1_r2 <- calculate_model_r2(model_h1)
+
+print(h1_fixed_effects)
+print(h1_r2)
+```
+
+```{message=FALSE, warning=FALSE}
+#' H2-Modell schätzen
+#'
+#' Schätzt ein lineares Mehrebenenmodell mit sozialer Vermeidung als abhängiger
+#' Variable. Das Modell enthält Within-Person-Einsamkeit am Vortag,
+#' Between-Person-Einsamkeit am Vortag, Rejection Sensitivity, die Interaktion
+#' zwischen Within-Person-Einsamkeit am Vortag und Rejection Sensitivity sowie
+#' soziale Vermeidung am Vortag als autoregressive Kontrollvariable.
+#'
+#' Personen werden über einen zufälligen Intercept berücksichtigt.
+#'
+#' @param dat_analysis Analysedatensatz.
+#'
+#' @return Ein geschätztes lmer-Modell.
+fit_h2_model <- function(dat_analysis) {
+  lmerTest::lmer(
+    avoid_day ~
+      loneliness_mean_day_lag1_round_wp +
+      loneliness_mean_day_lag1_round_bp +
+      rejection_sensitivity_z +
+      loneliness_mean_day_lag1_round_wp:rejection_sensitivity_z +
+      avoid_day_lag1 +
+      (1 | subj_id),
+    data = dat_analysis,
+    REML = FALSE
+  )
+}
+
+#' Fixed Effects mit 95%-Konfidenzintervallen ausgeben
+#'
+#' Erstellt eine Tabelle der Fixed Effects mit Schätzwert,
+#' Standardfehler, Freiheitsgraden, t-Wert, p-Wert und 95%-Konfidenzintervall.
+#'
+#' @param model Geschätztes lmer-Modell.
+#'
+#' @return Ein Tibble mit Fixed Effects und 95%-Konfidenzintervallen.
+summarise_fixed_effects_h2 <- function(model) {
+  fixed_effects <- as.data.frame(summary(model)$coefficients) %>%
+    tibble::rownames_to_column("term")
+  
+  confidence_intervals <- as.data.frame(
+    confint(model, parm = "beta_", method = "Wald")
+  ) %>%
+    tibble::rownames_to_column("term") %>%
+    rename(
+      CI_low = `2.5 %`,
+      CI_high = `97.5 %`
+    )
+  
+  fixed_effects %>%
+    left_join(confidence_intervals, by = "term") %>%
+    rename(
+      b = Estimate,
+      SE = `Std. Error`,
+      df = df,
+      t = `t value`,
+      p = `Pr(>|t|)`
+    ) %>%
+    mutate(
+      across(c(b, SE, df, t, p, CI_low, CI_high), ~ round(.x, 3))
+    )
+}
+
+#' Varianzaufklärung des H2-Modells berechnen
+#'
+#' Berechnet marginales und konditionales R² nach Nakagawa. Das marginale R²
+#' beschreibt die erklärte Varianz durch die Fixed Effects. Das konditionale R²
+#' beschreibt die erklärte Varianz durch Fixed und Random Effects zusammen.
+#'
+#' @param model Geschätztes H2-Modell.
+#'
+#' @return Ein Tibble mit marginalem und konditionalem R².
+calculate_h2_r2 <- function(model) {
+  r2_values <- performance::r2_nakagawa(model)
+  
+  tibble::tibble(
+    marginal_r2 = round(r2_values$R2_marginal, 3),
+    conditional_r2 = round(r2_values$R2_conditional, 3)
+  )
+}
+
+model_h2 <- fit_h2_model(dat_analysis)
+
+summary(model_h2)
+
+h2_fixed_effects <- summarise_fixed_effects_h2(model_h2)
+h2_r2 <- calculate_h2_r2(model_h2)
+
+print(h2_fixed_effects)
+print(h2_r2)
+```
+
+```{message=FALSE, warning=FALSE}
+#' Prüft Annahmen und Modellqualität linearer Mehrebenenmodelle
+#'
+#' Führt zentrale Modellprüfungen für die zwei lineare 
+#' Mehrebenenmodelle. Geprüft werden die
+#' Normalverteilung der
+#' Residuen, Homoskedastizität, Multikollinearität,
+#' Singularität, Konvergenz,
+#' Autokorrelation, einflussreiche Ausreißer sowie globale
+#' Modellkennwerte.
+#'
+#' @param model_h1 Geschätztes lineares Mehrebenenmodell für H1.
+#' @param model_h2 Geschätztes lineares Mehrebenenmodell für H2.
+#'   \code{REML = FALSE} geschätzt wurden.
+#'
+#' @return Liste mit den Ergebnissen der Modellprüfungen
+#'   für H1 und H2.
+
+check_lmm_assumptions_performance <- function(
+    model_h1,
+    model_h2,
+    estimator = "ML"
+) {
+  
+  list(
+    H1 = list(
+      normality = check_normality(model_h1),
+      heteroscedasticity = check_heteroscedasticity(model_h1),
+      collinearity = check_collinearity(model_h1),
+      singularity = check_singularity(model_h1),
+      convergence = check_convergence(model_h1),
+      autocorrelation = check_autocorrelation(model_h1),
+      outliers = check_outliers(model_h1),
+      performance = model_performance(
+        model_h1,
+        estimator = estimator
+      )
+    ),
+    H2 = list(
+      normality = check_normality(model_h2),
+      heteroscedasticity = check_heteroscedasticity(model_h2),
+      collinearity = check_collinearity(model_h2),
+      singularity = check_singularity(model_h2),
+      convergence = check_convergence(model_h2),
+      autocorrelation = check_autocorrelation(model_h2),
+      outliers = check_outliers(model_h2),
+      performance = model_performance(
+        model_h2,
+        estimator = estimator
+      )
+    )
+  )
+}
+
+
+lmm_checks <- check_lmm_assumptions_performance(
+  model_h1 = model_h1,
+  model_h2 = model_h2,
+  estimator = "ML"
+)
+
+lmm_checks
+```
+
+```{message=FALSE, warning=FALSE}
+#' Hypothesenmodelle vergleichen
+#'
+#' Vergleicht das H1-Modell mit dem erweiterten H2-Modell anhand eines
+#' Likelihood-Ratio-Tests. Beide Modelle wurden dafür mit Maximum Likelihood
+#' geschätzt.
+#'
+#' @param model_h1 Geschätztes H1-Modell.
+#' @param model_h2 Geschätztes H2-Modell.
+#'
+#' @return Modellvergleich mittels Likelihood-Ratio-Test.
+
+compare_hypothesis_models <- function(model_h1, model_h2) {
+  
+  model_h1_ml <- update(model_h1, REML = FALSE)
+  model_h2_ml <- update(model_h2, REML = FALSE)
+  
+  model_comparison <- stats::anova(
+    model_h1_ml,
+    model_h2_ml
+  )
+  
+  model_comparison
+}
+
+model_comparison <- compare_hypothesis_models(
+  model_h1 = model_h1,
+  model_h2 = model_h2
+)
+
+model_comparison
+```
+
+```{message=FALSE, warning=FALSE}
+#' Ertsellt eine Tabelle für den Modellvergleich im APA-Style
+#' 
+#' 
+make_apa_model_comparison_table <- function(model_comparison) {
+  
+  table_data <- model_comparison %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column("Modell") %>%
+    dplyr::mutate(
+      Modell = c("H1-Modell", "H2-Modell"),
+      AIC = round(AIC, 2),
+      BIC = round(BIC, 2),
+      logLik = round(logLik, 2),
+      Chisq = round(Chisq, 2),
+      `p` = dplyr::case_when(
+        is.na(`Pr(>Chisq)`) ~ "",
+        `Pr(>Chisq)` < .001 ~ "< .001",
+        TRUE ~ sprintf("%.3f", `Pr(>Chisq)`)
+      )
+    ) %>%
+    dplyr::select(
+      Modell,
+      df = npar,
+      AIC,
+      BIC,
+      logLik,
+      `χ²` = Chisq,
+      `Δdf` = Df,
+      p
+    )
+  
+  flextable::flextable(table_data) %>%
+    flextable::set_caption(
+      caption = flextable::as_paragraph(
+        flextable::as_b(
+          flextable::as_i(
+            "Tabelle X: Vergleich des H1- und H2-Modells"
+          )
+        )
+      )
+    ) %>%
+    flextable::align(
+      align = "center",
+      part = "all"
+    ) %>%
+    flextable::align(
+      j = "Modell",
+      align = "left",
+      part = "all"
+    ) %>%
+    flextable::font(
+      fontname = "Times New Roman",
+      part = "all"
+    ) %>%
+    flextable::fontsize(
+      size = 12,
+      part = "all"
+    ) %>%
+    flextable::theme_booktabs() %>%
+    flextable::autofit() %>%
+    flextable::add_footer_lines(
+      values = paste0(
+        "Anmerkung. Die Modelle wurden für den Likelihood-Ratio-Test ",
+        "mit Maximum Likelihood geschätzt. χ² = Likelihood-Ratio-Teststatistik; ",
+        "Δdf = Differenz der Freiheitsgrade."
+      )
+    ) %>%
+    flextable::italic(part = "footer") %>%
+    flextable::fontsize(
+      size = 11,
+      part = "footer"
+    )
+}
+
+apa_model_comparison_table <- make_apa_model_comparison_table(
+  model_comparison
+)
+
+apa_model_comparison_table
+
+```
+
+```{message=FALSE, warning=FALSE}
+#' Speichert die Tabelle des Modellvergleichs als docx Datei
+#' 
+flextable::save_as_docx(
+  apa_model_comparison_table,
+  path = "apa_model_comparison_table.docx"
+)
+```
+
+```{message=FALSE, warning=FALSE}
+#' Prüft Modellannahmen für lineare Mehrebenenmodelle
+#'
+#' Prüft die Normalverteilung der Residuen und die Homoskedastizität
+#' für zwei geschätzte lineare Mehrebenenmodelle mithilfe des Pakets
+#' \code{performance}.
+#'
+#' @param model_h1 Ein geschätztes Modellobjekt für H1.
+#' @param model_h2 Ein geschätztes Modellobjekt für H2.
+#'
+#' @return Eine Liste mit Ergebnissen der Annahmenprüfungen für beide Modelle.
+#' )
+check_lmm_assumptions <- function(model_h1, model_h2) {
+  
+  safe_performance_check <- function(check_function, model_object) {
+    
+    tryCatch(
+      check_function(model_object),
+      error = function(e) {
+        paste(
+          "Prüfung konnte nicht berechnet werden.",
+          e$message
+        )
+      }
+    )
+  }
+  
+  list(
+    H1 = list(
+      normality = safe_performance_check(
+        check_function = performance::check_normality,
+        model_object = model_h1
+      ),
+      heteroscedasticity = safe_performance_check(
+        check_function = performance::check_heteroscedasticity,
+        model_object = model_h1
+      )
+    ),
+    H2 = list(
+      normality = safe_performance_check(
+        check_function = performance::check_normality,
+        model_object = model_h2
+      ),
+      heteroscedasticity = safe_performance_check(
+        check_function = performance::check_heteroscedasticity,
+        model_object = model_h2
+      )
+    )
+  )
+}
+
+
+#' Bereitet Diagnosedaten für lineare Mehrebenenmodelle vor
+#'
+#' Extrahiert vorhergesagte Werte, Residuen und standardisierte Residuen
+#' aus zwei geschätzten linearen Mehrebenenmodellen. Die resultierenden
+#' Diagnosedaten können für Q Q Plots und Residuenplots verwendet werden.
+#'
+#' @param model_h1 Ein geschätztes Modellobjekt für H1.
+#' @param model_h2 Ein geschätztes Modellobjekt für H2.
+#'
+#' @return Ein \code{tibble} mit den Spalten \code{model_label},
+#'   \code{predicted_value}, \code{residual} und \code{std_residual}.
+#'
+#' )
+prepare_lmm_diagnostic_data <- function(model_h1, model_h2) {
+  
+  extract_diagnostic_data <- function(model_object, model_label_value) {
+    
+    predicted_values <- as.numeric(
+      stats::fitted(model_object)
+    )
+    
+    residual_values <- as.numeric(
+      stats::residuals(model_object)
+    )
+    
+    pearson_residual_values <- as.numeric(
+      stats::residuals(
+        model_object,
+        type = "pearson"
+      )
+    )
+    
+    tibble::tibble(
+      model_label = model_label_value,
+      predicted_value = predicted_values,
+      residual = residual_values,
+      std_residual = pearson_residual_values
+    )
+  }
+  
+  dplyr::bind_rows(
+    extract_diagnostic_data(
+      model_object = model_h1,
+      model_label_value = "H1 Modell"
+    ),
+    extract_diagnostic_data(
+      model_object = model_h2,
+      model_label_value = "H2 Modell"
+    )
+  )
+}
+
+
+#' Erstellt diagnostische Abbildungen für lineare Mehrebenenmodelle
+#'
+#' Erstellt Q Q Plots der standardisierten Residuen sowie Streudiagramme
+#' der standardisierten Residuen gegen die vorhergesagten Werte. Die
+#' Abbildungen dienen der visuellen Prüfung der Normalverteilungsannahme
+#' der Residuen und der Homoskedastizität.
+#'
+#' @return Eine diagnostischen Abbildungen.
+
+plot_lmm_diagnostics_apa <- function(diagnostic_data) {
+  
+  diagnostic_data <- diagnostic_data %>%
+    dplyr::mutate(
+      model_label = factor(
+        model_label,
+        levels = c(
+          "H1 Modell",
+          "H2 Modell"
+        )
+      )
+    )
+  
+  apa_theme <- ggplot2::theme_classic(
+    base_size = 12,
+    base_family = "serif"
+  ) +
+    ggplot2::theme(
+      strip.background = ggplot2::element_blank(),
+      strip.text = ggplot2::element_text(
+        size = 12
+      ),
+      axis.title = ggplot2::element_text(
+        size = 12
+      ),
+      axis.text = ggplot2::element_text(
+        size = 11
+      ),
+      plot.tag = ggplot2::element_text(
+        size = 12,
+        face = "bold"
+      ),
+      plot.margin = ggplot2::margin(
+        t = 8,
+        r = 8,
+        b = 8,
+        l = 8
+      )
+    )
+  
+  qq_plot <- diagnostic_data %>%
+    dplyr::filter(
+      !is.na(std_residual)
+    ) %>%
+    ggplot2::ggplot(
+      ggplot2::aes(
+        sample = std_residual
+      )
+    ) +
+    ggplot2::stat_qq(
+      size = 0.8,
+      alpha = 0.35
+    ) +
+    ggplot2::stat_qq_line(
+      linewidth = 0.5
+    ) +
+    ggplot2::facet_wrap(
+      ~ model_label,
+      ncol = 2
+    ) +
+    ggplot2::labs(
+      x = "Theoretische Quantile",
+      y = "Standardisierte Residuen"
+    ) +
+    apa_theme
+  
+  residual_plot <- diagnostic_data %>%
+    dplyr::filter(
+      !is.na(predicted_value),
+      !is.na(std_residual)
+    ) %>%
+    ggplot2::ggplot(
+      ggplot2::aes(
+        x = predicted_value,
+        y = std_residual
+      )
+    ) +
+    ggplot2::geom_hline(
+      yintercept = 0,
+      linetype = "dashed",
+      linewidth = 0.35
+    ) +
+    ggplot2::geom_point(
+      size = 0.8,
+      alpha = 0.25
+    ) +
+    ggplot2::facet_wrap(
+      ~ model_label,
+      ncol = 2
+    ) +
+    ggplot2::labs(
+      x = "Vorhergesagte Werte",
+      y = "Standardisierte Residuen"
+    ) +
+    apa_theme
+  
+  patchwork::wrap_plots(
+    qq_plot,
+    residual_plot,
+    ncol = 1
+  ) +
+    patchwork::plot_annotation(
+      tag_levels = "A"
+    )
+}
+
+
+lmm_assumption_checks <- check_lmm_assumptions(
+  model_h1 = model_h1,
+  model_h2 = model_h2
+)
+
+lmm_assumption_checks
+
+
+lmm_diagnostic_data <- prepare_lmm_diagnostic_data(
+  model_h1 = model_h1,
+  model_h2 = model_h2
+)
+
+lmm_diagnostic_plot <- plot_lmm_diagnostics_apa(
+  diagnostic_data = lmm_diagnostic_data
+)
+
+lmm_diagnostic_plot
+
+```
+
+```{message=FALSE, warning=FALSE}
+#' Speichert die Diagnostischen Abbildungen als png Datei
+#' 
+#' 
+ggplot2::ggsave(
+  filename = "lmm_diagnostic_plot.png",
+  plot = lmm_diagnostic_plot,
+  width = 7.5,
+  height = 6.5,
+  dpi = 300
+)
+```
+
+```{message=FALSE, warning=FALSE}
+#' Extrahiert Random Effects aus einem LMM
+#'
+#' Erstellt eine Tabelle mit Varianz und Standardabweichung der Random Effects
+#' sowie der Residuen.
+#'
+#' @param model Geschätztes lmer-Modell.
+#' @param model_name Modellbezeichnung.
+#'
+#' @return Tibble mit Random-Effects-Kennwerten.
+
+extract_random_effects <- function(model, model_name) {
+  
+  random_effects <- as.data.frame(lme4::VarCorr(model)) %>%
+    dplyr::mutate(
+      Modell = model_name,
+      Komponente = dplyr::case_when(
+        grp == "subj_id" & var1 == "(Intercept)" ~
+          "Zufälliger Interzept Personenebene",
+        grp == "Residual" ~
+          "Residuum",
+        TRUE ~ grp
+      ),
+      Varianz = round(vcov, 2),
+      SD = round(sdcor, 2)
+    ) %>%
+    dplyr::select(
+      Modell,
+      Komponente,
+      Varianz,
+      SD
+    )
+  
+  random_effects
+}
+
+random_effects_table <- dplyr::bind_rows(
+  extract_random_effects(model_h1, "H1-Modell"),
+  extract_random_effects(model_h2, "H2-Modell")
+)
+
+random_effects_table
+```
+
+```{message=FALSE, warning=FALSE}
+#' Erstellt eine APA Random-Effects-Tabelle
+#'
+#' @param random_effects_table Tabelle mit Random-Effects-Kennwerten.
+#'
+#' @return flextable-Objekt.
+make_apa_random_effects_table <- function(random_effects_table) {
+  
+  flextable::flextable(random_effects_table) %>%
+    flextable::set_caption(
+      caption = flextable::as_paragraph(
+        flextable::as_b(
+          flextable::as_i(
+            "Tabelle X: Random Effects der Mehrebenenmodelle"
+          )
+        )
+      )
+    ) %>%
+    flextable::align(
+      j = "Komponente",
+      align = "left",
+      part = "all"
+    ) %>%
+    flextable::align(
+      j = c("Modell", "Varianz", "SD"),
+      align = "center",
+      part = "all"
+    ) %>%
+    flextable::font(
+      fontname = "Times New Roman",
+      part = "all"
+    ) %>%
+    flextable::fontsize(
+      size = 12,
+      part = "all"
+    ) %>%
+    flextable::theme_booktabs() %>%
+    flextable::autofit() %>%
+    flextable::add_footer_lines(
+      values = paste0(
+        "Anmerkung. Angegeben sind Varianzkomponenten und Standardabweichungen ",
+        "der zufälligen Interzepte auf Personenebene sowie der Residuen. ",
+        "SD = Standardabweichung."
+      )
+    ) %>%
+    flextable::italic(part = "footer") %>%
+    flextable::fontsize(
+      size = 11,
+      part = "footer"
+    )
+}
+
+apa_random_effects_table <- make_apa_random_effects_table(
+  random_effects_table
+)
+
+apa_random_effects_table
+```
+
+```{message=FALSE, warning=FALSE}
+#' Speichert die Randome Effects Tabelle als doc Datei
+flextable::save_as_docx(
+  apa_random_effects_table,
+  path = "tabelle_random_effects.docx"
+)
+```
+
+```{message=FALSE, warning=FALSE}
+#' Erzeugt eine Flextabel Tabelle für die Ergebnisse von H1
+#' 
+#' @param h1_fixed_effects
+#' 
+#' @return eine Flextabel Tabelle für die Ergebnisse von H1
+#' 
+format_number <- function(x, digits = 2) {
+  sprintf(
+    paste0("%.", digits, "f"),
+    as.numeric(x)
+  )
+}
+
+format_p_value <- function(p) {
+  p_numeric <- as.numeric(p)
+  
+  dplyr::case_when(
+    is.na(p_numeric) ~ "",
+    p_numeric < .001 ~ "< .001",
+    TRUE ~ sub("^0", "", sprintf("%.3f", p_numeric))
+  )
+}
+
+
+# Tabellendaten vorbereiten ----------------------------------------------
+
+h1_results_table_data <- h1_fixed_effects %>%
+  dplyr::mutate(
+    predictor = dplyr::recode(
+      term,
+      "(Intercept)" = "(Konstante)",
+      "loneliness_mean_day_lag1_round_wp" =
+        "Einsamkeit am Vortag (Within-Person)",
+      "loneliness_mean_day_lag1_round_bp" =
+        "Einsamkeit am Vortag (Between-Person)",
+      "avoid_day_lag1" = "Soziale Vermeidung am Vortag",
+      .default = term
+    ),
+    b = format_number(b, digits = 2),
+    SE = format_number(SE, digits = 2),
+    df = format_number(df, digits = 2),
+    t = format_number(t, digits = 2),
+    p = format_p_value(p),
+    UG = format_number(CI_low, digits = 2),
+    OG = format_number(CI_high, digits = 2)
+  ) %>%
+  dplyr::select(
+    predictor,
+    b,
+    SE,
+    df,
+    t,
+    p,
+    UG,
+    OG
+  )
+
+
+# Modellkennwerte für Anmerkung ------------------------------------------
+
+n_h1 <- stats::nobs(model_h1)
+
+r2_marginal_h1 <- format_number(
+  h1_r2$marginal_r2,
+  digits = 2
+)
+
+r2_conditional_h1 <- format_number(
+  h1_r2$conditional_r2,
+  digits = 2
+)
+
+
+# Linien definieren -------------------------------------------------------
+
+thin_border <- officer::fp_border(
+  color = "black",
+  width = 1
+)
+
+
+# Flextable erstellen -----------------------------------------------------
+
+h1_results_flextable <- flextable::flextable(h1_results_table_data) %>%
+  flextable::set_header_labels(
+    predictor = "Prädiktoren",
+    b = "b",
+    SE = "SE",
+    df = "df",
+    t = "t",
+    p = "p",
+    UG = "UG",
+    OG = "OG"
+  ) %>%
+  flextable::add_header_row(
+    values = c("", "", "", "", "", "", "95%-KI"),
+    colwidths = c(1, 1, 1, 1, 1, 1, 2)
+  ) %>%
+  flextable::add_header_row(
+    values = "Abhängige Variable: Soziale Vermeidung am Morgen des Folgetages",
+    colwidths = 8
+  ) %>%
+  flextable::add_header_row(
+    values = "Lineares Mehrebenenmodell zur Vorhersage sozialer Vermeidung am Folgemorgen",
+    colwidths = 8
+  ) %>%
+  flextable::add_header_row(
+    values = "Tabelle 4",
+    colwidths = 8
+  ) %>%
+  flextable::add_footer_lines(
+    values = paste0(
+      "Anmerkungen. N = ", n_h1, " tagesbasierte Analysefälle. ",
+      "b = unstandardisierte Koeffizienten. ",
+      "SE = Standardfehler. ",
+      "df = Freiheitsgrade. ",
+      "KI = Konfidenzintervall. ",
+      "UG = untere Grenze. ",
+      "OG = obere Grenze. ",
+      "Marginales R² = ", r2_marginal_h1, ". ",
+      "Konditionales R² = ", r2_conditional_h1, ". ",
+      "Das Modell enthält einen Random Intercept auf Personenebene."
+    )
+  ) %>%
+  flextable::theme_booktabs() %>%
+  flextable::border_remove() %>%
+  flextable::hline(
+    i = 2,
+    part = "header",
+    border = thin_border
+  ) %>%
+  flextable::hline(
+    i = 4,
+    j = c("UG", "OG"),
+    part = "header",
+    border = thin_border
+  ) %>%
+  flextable::hline(
+    i = 5,
+    part = "header",
+    border = thin_border
+  ) %>%
+  flextable::hline(
+    i = nrow(h1_results_table_data),
+    part = "body",
+    border = thin_border
+  ) %>%
+  flextable::font(
+    fontname = "Times New Roman",
+    part = "all"
+  ) %>%
+  flextable::fontsize(
+    size = 12,
+    part = "all"
+  ) %>%
+  flextable::align(
+    j = "predictor",
+    align = "left",
+    part = "all"
+  ) %>%
+  flextable::align(
+    j = c("b", "SE", "df", "t", "p", "UG", "OG"),
+    align = "center",
+    part = "all"
+  ) %>%
+  flextable::align(
+    align = "center",
+    part = "header"
+  ) %>%
+  flextable::align(
+    i = 3,
+    align = "left",
+    part = "header"
+  ) %>%
+  flextable::italic(
+    i = 2,
+    italic = TRUE,
+    part = "header"
+  ) %>%
+  flextable::italic(
+    j = c("b", "SE", "df", "t", "p"),
+    italic = TRUE,
+    part = "header"
+  ) %>%
+  flextable::padding(
+    padding = 4,
+    part = "all"
+  ) %>%
+  flextable::autofit()
+
+h1_results_flextable
+```
+
+```{message=FALSE, warning=FALSE}
+#' Speichert die Tabelle der Ergebnisse von H1 als doxc Datei
+#' 
+flextable::save_as_docx(
+  h1_results_flextable,
+  path = "h1_results_flextable.docx"
+)
+```
+
+```{message=FALSE, warning=FALSE}
+#' Erstellt eine Tabelle für die Ergebnisse von H2
+#' 
+#' @param h2_fixed_effects
+#' 
+#' @return eine Flextabel Tabelle für die Ergebnisse von H2
+#' 
+#' 
+
+format_number <- function(x, digits = 2) {
+  sprintf(
+    paste0("%.", digits, "f"),
+    as.numeric(x)
+  )
+}
+
+format_p_value <- function(p) {
+  p_numeric <- as.numeric(p)
+  
+  dplyr::case_when(
+    is.na(p_numeric) ~ "",
+    p_numeric < .001 ~ "< .001",
+    TRUE ~ sub("^0", "", sprintf("%.3f", p_numeric))
+  )
+}
+
+
+# Tabellendaten vorbereiten ----------------------------------------------
+
+h2_results_table_data <- h2_fixed_effects %>%
+  dplyr::mutate(
+    predictor = dplyr::recode(
+      term,
+      "(Intercept)" = "(Konstante)",
+      "loneliness_mean_day_lag1_round_wp" =
+        "Einsamkeit am Vortag (Within-Person)",
+      "loneliness_mean_day_lag1_round_bp" =
+        "Einsamkeit am Vortag (Between-Person)",
+      "rejection_sensitivity_z" =
+        "Zurückweisungssensitivität (z)",
+      "loneliness_mean_day_lag1_round_wp:rejection_sensitivity_z" =
+        "Einsamkeit am Vortag (Within-Person) × Zurückweisungssensitivität (z)",
+      "avoid_day_lag1" =
+        "Soziale Vermeidung am Vortag",
+      .default = term
+    ),
+    b = format_number(b, digits = 2),
+    SE = format_number(SE, digits = 2),
+    df = format_number(df, digits = 2),
+    t = format_number(t, digits = 2),
+    p = format_p_value(p),
+    UG = format_number(CI_low, digits = 2),
+    OG = format_number(CI_high, digits = 2)
+  ) %>%
+  dplyr::select(
+    predictor,
+    b,
+    SE,
+    df,
+    t,
+    p,
+    UG,
+    OG
+  )
+
+
+# Modellkennwerte für Anmerkung ------------------------------------------
+
+n_h2 <- stats::nobs(model_h2)
+
+r2_marginal_h2 <- format_number(
+  h2_r2$marginal_r2,
+  digits = 2
+)
+
+r2_conditional_h2 <- format_number(
+  h2_r2$conditional_r2,
+  digits = 2
+)
+
+
+# Linien definieren -------------------------------------------------------
+
+thin_border <- officer::fp_border(
+  color = "black",
+  width = 1
+)
+
+
+# Flextable erstellen -----------------------------------------------------
+
+h2_results_flextable <- flextable::flextable(h2_results_table_data) %>%
+  flextable::set_header_labels(
+    predictor = "Prädiktoren",
+    b = "b",
+    SE = "SE",
+    df = "df",
+    t = "t",
+    p = "p",
+    UG = "UG",
+    OG = "OG"
+  ) %>%
+  flextable::add_header_row(
+    values = c("", "", "", "", "", "", "95%-KI"),
+    colwidths = c(1, 1, 1, 1, 1, 1, 2)
+  ) %>%
+  flextable::add_header_row(
+    values = "Abhängige Variable: Soziale Vermeidung am Morgen des Folgetages",
+    colwidths = 8
+  ) %>%
+  flextable::add_header_row(
+    values = "Lineares Mehrebenenmodell mit Zurückweisungssensitivität als Moderator",
+    colwidths = 8
+  ) %>%
+  flextable::add_header_row(
+    values = "Tabelle 5",
+    colwidths = 8
+  ) %>%
+  flextable::add_footer_lines(
+    values = paste0(
+      "Anmerkungen. N = ", n_h2, " tagesbasierte Analysefälle. ",
+      "b = unstandardisierte Koeffizienten. ",
+      "SE = Standardfehler. ",
+      "df = Freiheitsgrade. ",
+      "KI = Konfidenzintervall. ",
+      "UG = untere Grenze. ",
+      "OG = obere Grenze. ",
+      "Zurückweisungssensitivität wurde z-standardisiert. ",
+      "Marginales R² = ", r2_marginal_h2, ". ",
+      "Konditionales R² = ", r2_conditional_h2, ". ",
+      "Das Modell enthält einen Random Intercept auf Personenebene."
+    )
+  ) %>%
+  flextable::theme_booktabs() %>%
+  flextable::border_remove() %>%
+  flextable::hline(
+    i = 2,
+    part = "header",
+    border = thin_border
+  ) %>%
+  flextable::hline(
+    i = 4,
+    j = c("UG", "OG"),
+    part = "header",
+    border = thin_border
+  ) %>%
+  flextable::hline(
+    i = 5,
+    part = "header",
+    border = thin_border
+  ) %>%
+  flextable::hline(
+    i = nrow(h2_results_table_data),
+    part = "body",
+    border = thin_border
+  ) %>%
+  flextable::font(
+    fontname = "Times New Roman",
+    part = "all"
+  ) %>%
+  flextable::fontsize(
+    size = 12,
+    part = "all"
+  ) %>%
+  flextable::align(
+    j = "predictor",
+    align = "left",
+    part = "all"
+  ) %>%
+  flextable::align(
+    j = c("b", "SE", "df", "t", "p", "UG", "OG"),
+    align = "center",
+    part = "all"
+  ) %>%
+  flextable::align(
+    align = "center",
+    part = "header"
+  ) %>%
+  flextable::align(
+    i = 3,
+    align = "left",
+    part = "header"
+  ) %>%
+  flextable::italic(
+    i = 2,
+    italic = TRUE,
+    part = "header"
+  ) %>%
+  flextable::italic(
+    j = c("b", "SE", "df", "t", "p"),
+    italic = TRUE,
+    part = "header"
+  ) %>%
+  flextable::padding(
+    padding = 4,
+    part = "all"
+  ) %>%
+  flextable::autofit()
+
+h2_results_flextable
+```
+
+```{message=FALSE, warning=FALSE}
+#' Speichtert die Tabelle der Ergebnisse von H2 als Docx
+#' 
+flextable::save_as_docx(
+  h2_results_flextable,
+  path = "h2_results_flextable.docx"
+)
+```
+

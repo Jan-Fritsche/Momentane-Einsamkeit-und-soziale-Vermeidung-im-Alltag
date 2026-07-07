@@ -1,0 +1,830 @@
+---
+title: "02_deskreptive_statistiken"
+author: "Jan Fritsche"
+date: "2026-06-11"
+output: html_document
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+needed_packages <- c("dplyr", "tidyr", "tibble", "flextable", "lme4", "EMAtools")
+
+for (pkg in needed_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg)
+  }
+}
+
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(flextable)
+library(lme4)
+library(EMAtools)
+```
+
+```{message=FALSE, warning=FALSE}
+#' Analysedatensatz laden
+#'
+#' Lädt den zuvor gespeicherten Analysedatensatz aus einer RDS-Datei.
+#'
+#' @param path Pfad zur gespeicherten RDS-Datei.
+#'
+#' @return Der vorbereitete Analysedatensatz.
+load_analysis_data <- function(
+  path = "D:/Studium/B.Sc/LMU/BA Arbeit/Daten/Lonliness and Rejection Sensitivity/dat_analysis.rds"
+) {
+  readRDS(path)
+}
+
+dat_analysis <- load_analysis_data()
+
+```
+
+```{message=FALSE, warning=FALSE}
+#' Personenebene für demografische Analysen erstellen
+#'
+#' Reduziert den Long-Datensatz auf eine Zeile pro Person. Alter und
+#' Geschlecht werden pro Person nur einmal übernommen.
+#'
+#' @param data Analysedatensatz im Long-Format.
+#' @param id_var Name der Personen-ID-Variable.
+#'
+#' @return Datensatz mit einer Zeile pro Person.
+create_person_level_demographics <- function(data, id_var = "subj_id") {
+  
+  data %>%
+    group_by(.data[[id_var]]) %>%
+    summarise(
+      age = first(age),
+      gender = first(gender_label),
+      .groups = "drop"
+    )
+}
+
+dat_demo <- create_person_level_demographics(dat_analysis)
+```
+
+```{message=FALSE, warning=FALSE}
+#' Deskriptive Statistik für Alter berechnen
+#'
+#' Berechnet Anzahl gültiger Fälle, Mittelwert, Standardabweichung,
+#' Minimum, Maximum und Range für das Alter.
+#'
+#' @param data Personendatensatz mit der Variable `age`.
+#'
+#' @return Tabelle mit deskriptiven Kennwerten für Alter.
+describe_age <- function(data) {
+  
+  data %>%
+    summarise(
+      N = sum(!is.na(age)),
+      Mean = round(mean(age, na.rm = TRUE), 2),
+      SD = round(sd(age, na.rm = TRUE), 2),
+      Min = min(age, na.rm = TRUE),
+      Max = max(age, na.rm = TRUE)
+    ) %>%
+    mutate(
+      Range = paste0(Min, "-", Max)
+    ) %>%
+    select(N, Mean, SD, Range)
+}
+
+age_descriptives <- describe_age(dat_demo)
+
+age_descriptives
+
+```
+
+```{message=FALSE, warning=FALSE}
+#' Häufigkeiten für Geschlecht berechnen
+#'
+#' Berechnet absolute Häufigkeiten und Prozentwerte für Geschlecht.
+#'
+#' @param data Personendatensatz mit der Variable `gender`.
+#'
+#' @return Tabelle mit N und Prozent pro Geschlechtskategorie.
+describe_gender <- function(data) {
+  
+  data %>%
+    mutate(
+      gender = factor(
+        gender,
+        levels = c("weiblich", "männlich", "divers")
+      )
+    ) %>%
+    count(gender, name = "N", .drop = FALSE) %>%
+    mutate(
+      Prozent = round(N / sum(N) * 100, 1)
+    )
+}
+
+gender_descriptives <- describe_gender(dat_demo)
+
+gender_descriptives
+```
+
+```{message=FALSE, warning=FALSE}
+#' Berechnet Analysebeobachtungen pro Person
+#'
+#' @param dat Datensatz vor dem Complete-Case-Filter.
+#' @param dat_analysis Finaler Analysedatensatz.
+#' @param n_days_analysis Anzahl analysierbarer Tage pro Runde.
+#'
+#' @return Tibble mit Beobachtungen und Compliance pro Person.
+calculate_person_compliance <- function(dat,
+                                        dat_analysis,
+                                        n_days_analysis = 8) {
+  n_possible_per_person <- dplyr::n_distinct(dat$round) * n_days_analysis
+
+  dat %>%
+    dplyr::distinct(subj_id) %>%
+    dplyr::left_join(
+      dat_analysis %>%
+        dplyr::count(subj_id, name = "n_observations"),
+      by = "subj_id"
+    ) %>%
+    dplyr::mutate(
+      n_observations = tidyr::replace_na(n_observations, 0),
+      n_possible = n_possible_per_person,
+      compliance_percent = round(n_observations / n_possible * 100, 2)
+    )
+}
+
+person_compliance <- calculate_person_compliance(
+  dat = dat,
+  dat_analysis = dat_analysis
+)
+
+person_compliance
+```
+
+```{message=FALSE, warning=FALSE}
+#' Berechnet Kennwerte der Beobachtungen pro Person
+#'
+#' @param person_compliance Tibble mit Beobachtungen pro Person.
+#'
+#' @return Tibble mit N, Mittelwert, SD, Median und Range.
+summarise_person_observations <- function(person_compliance) {
+  person_compliance %>%
+    dplyr::summarise(
+      N = dplyr::n(),
+      M = round(mean(n_observations, na.rm = TRUE), 2),
+      SD = round(stats::sd(n_observations, na.rm = TRUE), 2),
+      Median = stats::median(n_observations, na.rm = TRUE),
+      Min = min(n_observations, na.rm = TRUE),
+      Max = max(n_observations, na.rm = TRUE),
+      Range = paste0(Min, "-", Max)
+    )
+}
+
+
+person_observation_summary <- summarise_person_observations(person_compliance)
+
+person_observation_summary
+```
+
+```{message=FALSE, warning=FALSE}
+
+#' Deskriptive Statistiken berechnen
+#'
+#' Berechnet N, Mittelwert, Standardabweichung, Median und Range für die
+#' zentralen Analysevariablen.
+#'
+#' @param dat_analysis Analysedatensatz.
+#'
+#' @return Ein Tibble mit deskriptiven Statistiken.
+make_descriptives <- function(dat_analysis) {
+  
+  first_non_missing <- function(x) {
+    x <- x[!is.na(x)]
+    if (length(x) == 0) NA_real_ else x[1]
+  }
+  
+  summarise_vars <- function(dat, vars) {
+    dat %>%
+      summarise(
+        across(
+          all_of(vars),
+          list(
+            N = ~ sum(!is.na(.x)),
+            M = ~ mean(.x, na.rm = TRUE),
+            SD = ~ sd(.x, na.rm = TRUE),
+            Median = ~ median(.x, na.rm = TRUE),
+            Min = ~ min(.x, na.rm = TRUE),
+            Max = ~ max(.x, na.rm = TRUE)
+          ),
+          .names = "{.col}__{.fn}"
+        )
+      ) %>%
+      pivot_longer(
+        cols = everything(),
+        names_to = c("variable", "statistic"),
+        names_sep = "__"
+      ) %>%
+      pivot_wider(
+        names_from = statistic,
+        values_from = value
+      )
+  }
+  
+  daily_vars <- c(
+    "avoid_day",
+    "avoid_day_lag1",
+    "loneliness_mean_day_lag1_round_wp"
+  )
+  
+  round_vars <- c(
+    "loneliness_mean_day_lag1_round_bp"
+  )
+  
+  person_vars <- c(
+    "rejection_sensitivity"
+  )
+  
+  variable_labels <- tibble(
+    variable = c(daily_vars, round_vars, person_vars),
+    Variable = c(
+      "Soziale Vermeidung",
+      "Soziale Vermeidung am Vortag",
+      "Einsamkeit am Vortag (Within-Person)",
+      "Einsamkeit am Vortag (Between-Person)",
+      "Rejection Sensitivity"
+    )
+  )
+  
+  daily_descriptives <- dat_analysis %>%
+    summarise_vars(daily_vars)
+  
+  round_data <- dat_analysis %>%
+    distinct(
+      subj_id,
+      round,
+      across(all_of(round_vars))
+    )
+  
+  round_descriptives <- round_data %>%
+    summarise_vars(round_vars)
+  
+  person_data <- dat_analysis %>%
+    group_by(subj_id) %>%
+    summarise(
+      rejection_sensitivity = first_non_missing(rejection_sensitivity),
+      .groups = "drop"
+    )
+  
+  person_descriptives <- person_data %>%
+    summarise_vars(person_vars)
+  
+  descriptives <- bind_rows(
+    daily_descriptives,
+    round_descriptives,
+    person_descriptives
+  ) %>%
+    left_join(variable_labels, by = "variable") %>%
+    mutate(
+      N = as.integer(N),
+      across(c(M, SD, Median, Min, Max), ~ round(.x, 2)),
+      Range = paste0(Min, "–", Max)
+    ) %>%
+    select(Variable, N, M, SD, Median, Range)
+  
+  descriptives
+}
+
+descriptives <- make_descriptives(dat_analysis)
+
+descriptives
+```
+
+```{message=FALSE, warning=FALSE}
+#' Erstellt eine APA-konforme Deskriptivtabelle
+#'
+#' @param descriptives Tibble mit Variable, N, M, SD, Median und Range.
+#'
+#' @return flextable-Objekt.
+make_apa_descriptive_table <- function(descriptives) {
+  
+  table_data <- descriptives %>%
+    dplyr::rename(
+      Mdn = Median
+    )
+  
+  apa_table <- flextable::flextable(table_data) %>%
+    flextable::set_header_labels(
+      Variable = "Variable",
+      N = "N",
+      M = "M",
+      SD = "SD",
+      Mdn = "Mdn",
+      Range = "Range"
+    ) %>%
+    flextable::set_caption(
+      caption = flextable::as_paragraph(
+        flextable::as_b(
+          flextable::as_i(
+            "Tabelle 1: Deskriptive Statistiken der zentralen Modellvariablen"
+          )
+        )
+      )
+    ) %>%
+    flextable::align(
+      j = "Variable",
+      align = "left",
+      part = "all"
+    ) %>%
+    flextable::align(
+      j = c("N", "M", "SD", "Mdn", "Range"),
+      align = "center",
+      part = "all"
+    ) %>%
+    flextable::colformat_double(
+      j = c("M", "SD", "Mdn"),
+      digits = 2
+    ) %>%
+    flextable::italic(
+      j = c("M", "SD", "Mdn"),
+      part = "header"
+    ) %>%
+    flextable::font(
+      fontname = "Times New Roman",
+      part = "all"
+    ) %>%
+    flextable::fontsize(
+      size = 12,
+      part = "all"
+    ) %>%
+    flextable::theme_booktabs() %>%
+    flextable::autofit() %>%
+    flextable::add_footer_lines(
+      values = "Anmerkung. N = Anzahl gültiger Beobachtungen; M = Mittelwert; SD = Standardabweichung; Mdn = Median. Range gibt den beobachteten Wertebereich an. Die Within-Person-Komponente der Einsamkeit wurde personenzentriert berechnet; Werte nahe 0 zeigen daher durchschnittliche Einsamkeit relativ zum eigenen Mittelwert an, negative Werte geringere und positive Werte höhere Einsamkeit als üblich."
+    ) %>%
+    flextable::italic(
+      part = "footer"
+    ) %>%
+    flextable::fontsize(
+      size = 11,
+      part = "footer"
+    )
+  
+  apa_table
+}
+
+apa_descriptives_table <- make_apa_descriptive_table(descriptives)
+
+apa_descriptives_table
+
+```
+
+```{message=FALSE, warning=FALSE}
+#' Speichert die Tabelle für die deskriptiven Statistiken als docx 
+#' 
+#' 
+flextable::save_as_docx(
+  apa_descriptives_table,
+  path = "tabelle_1_deskriptive_statistiken.docx"
+)
+```
+
+```{message=FALSE, warning=FALSE}
+#' Intraklassenkorrelation berechnen
+#'
+#' Berechnet die Intraklassenkorrelation für soziale Vermeidung. Dafür wird ein
+#' Nullmodell mit zufälligem Intercept für Personen geschätzt. Die ICC beschreibt,
+#' welcher Anteil der Varianz in sozialer Vermeidung auf Unterschiede zwischen
+#' Personen zurückzuführen ist.
+#'
+#' @param dat_analysis Analysedatensatz.
+#'
+#' @return Ein Tibble mit Varianzkomponenten und ICC.
+calculate_icc <- function(dat_analysis) {
+  null_model <- lmer(
+    avoid_day ~ 1 + (1 | subj_id),
+    data = dat_analysis,
+    REML = TRUE
+  )
+  
+  variance_components <- as.data.frame(VarCorr(null_model))
+  
+  var_person <- variance_components %>%
+    filter(grp == "subj_id") %>%
+    pull(vcov)
+  
+  var_residual <- variance_components %>%
+    filter(grp == "Residual") %>%
+    pull(vcov)
+  
+  icc <- var_person / (var_person + var_residual)
+  
+  tibble(
+    variable = "Soziale Vermeidung",
+    varianz_zwischen_personen = round(var_person, 2),
+    varianz_innerhalb_personen = round(var_residual, 2),
+    ICC = round(icc, 2)
+  )
+}
+
+icc_table <- calculate_icc(dat_analysis)
+
+icc_table
+```
+
+```{message=FALSE, warning=FALSE}
+#' ICC-Tabelle im APA-Stil ausgeben
+#'
+#' Erstellt eine APA-nahe Tabelle für die Intraklassenkorrelation der sozialen
+#' Vermeidung.
+#'
+#' @param icc_table Tibble mit Varianzkomponenten und ICC.
+#'
+#' @return Eine formatierte flextable-Tabelle.
+print_icc_table <- function(icc_table) {
+  icc_table %>%
+    rename(
+      Variable = variable,
+      `Varianz zwischen Personen` = varianz_zwischen_personen,
+      `Varianz innerhalb von Personen` = varianz_innerhalb_personen
+    ) %>%
+    flextable() %>%
+    theme_booktabs() %>%
+    set_caption(
+      "Tabelle 2\nIntraklassenkorrelation der sozialen Vermeidung"
+    ) %>%
+    align(align = "center", part = "all") %>%
+    align(j = "Variable", align = "left", part = "all") %>%
+    autofit() %>%
+    add_footer_lines(
+      values = "Anmerkung. Die ICC beschreibt den Anteil der Gesamtvarianz, der auf Unterschiede zwischen Personen zurückzuführen ist."
+    )
+}
+
+icc_flextable <- print_icc_table(icc_table)
+
+icc_flextable
+```
+
+
+```{message=FALSE, warning=FALSE}
+#' Erstellt Korrelationstabellen für Within- und Between-Person-Korrelationen
+#'
+#' @param dat_analysis Analysedatensatz.
+#' @param level Korrelationsebene. Entweder "within" oder "between".
+#' @param table_number Tabellennummer als String.
+#'
+#' @return Ein flextable-Objekt mit einer Korrelationsmatrix.
+make_apa_correlation_table <- function(dat_analysis,
+                                       level = c("within", "between"),
+                                       table_number = "Tabelle X") {
+  
+  level <- match.arg(level)
+  
+  format_r <- function(x) {
+    x <- sprintf("%.2f", x)
+    x <- gsub("^0\\.", ".", x)
+    x <- gsub("^-0\\.", "-.", x)
+    x
+  }
+  
+  as_numeric_clean <- function(x) {
+    if (is.numeric(x)) {
+      return(x)
+    }
+    
+    as.numeric(gsub(",", ".", as.character(x)))
+  }
+  
+  if (level == "within") {
+    
+    correlation_data <- dat_analysis %>%
+      dplyr::mutate(
+        dplyr::across(
+          dplyr::all_of(c(
+            "avoid_day",
+            "avoid_day_lag1",
+            "loneliness_mean_day_lag1_round_wp"
+          )),
+          as_numeric_clean
+        )
+      ) %>%
+      dplyr::group_by(subj_id) %>%
+      dplyr::mutate(
+        avoid_day_wp = avoid_day - mean(avoid_day, na.rm = TRUE),
+        avoid_day_lag1_wp = avoid_day_lag1 - mean(avoid_day_lag1, na.rm = TRUE)
+      ) %>%
+      dplyr::ungroup() %>%
+      dplyr::select(
+        avoid_day_wp,
+        avoid_day_lag1_wp,
+        loneliness_mean_day_lag1_round_wp
+      ) %>%
+      dplyr::rename(
+        `Soziale Vermeidung` = avoid_day_wp,
+        `Soziale Vermeidung am Vortag` = avoid_day_lag1_wp,
+        `Einsamkeit am Vortag` = loneliness_mean_day_lag1_round_wp
+      )
+    
+    caption <- paste0(
+      table_number,
+      ": Within-Person-Korrelationen der zentralen Modellvariablen"
+    )
+    
+    note <- paste0(
+      "Anmerkung. Dargestellt sind Pearson-Korrelationen unter der Diagonale. ",
+      "Soziale Vermeidung und soziale Vermeidung am Vortag wurden für die Korrelationsberechnung personenzentriert."
+    )
+    
+  } else {
+    
+    correlation_data <- dat_analysis %>%
+      dplyr::mutate(
+        dplyr::across(
+          dplyr::all_of(c(
+            "avoid_day",
+            "avoid_day_lag1",
+            "loneliness_mean_day_lag1_round_bp",
+            "rejection_sensitivity"
+          )),
+          as_numeric_clean
+        )
+      ) %>%
+      dplyr::group_by(subj_id) %>%
+      dplyr::summarise(
+        `Soziale Vermeidung` = mean(avoid_day, na.rm = TRUE),
+        `Soziale Vermeidung am Vortag` = mean(avoid_day_lag1, na.rm = TRUE),
+        `Einsamkeit am Vortag` = mean(
+          loneliness_mean_day_lag1_round_bp,
+          na.rm = TRUE
+        ),
+        `Rejection Sensitivity` = dplyr::first(rejection_sensitivity),
+        .groups = "drop"
+      ) %>%
+      dplyr::select(-subj_id)
+    
+    caption <- paste0(
+      table_number,
+      ": Between-Person-Korrelationen der zentralen Modellvariablen"
+    )
+    
+    note <- paste0(
+      "Anmerkung. Dargestellt sind Pearson-Korrelationen unter der Diagonale. ",
+      "Tagesvariablen wurden für die Korrelationsberechnung auf Personenebene aggregiert."
+    )
+  }
+  
+  cor_mat <- stats::cor(
+    correlation_data,
+    use = "pairwise.complete.obs"
+  )
+  
+  vars <- colnames(cor_mat)
+  
+  cor_display <- matrix(
+    "",
+    nrow = length(vars),
+    ncol = length(vars)
+  )
+  
+  for (i in seq_along(vars)) {
+    for (j in seq_along(vars)) {
+      if (i == j) {
+        cor_display[i, j] <- "—"
+      } else if (j < i) {
+        cor_display[i, j] <- format_r(cor_mat[i, j])
+      }
+    }
+  }
+  
+  correlation_table <- as.data.frame(
+    cor_display,
+    stringsAsFactors = FALSE
+  )
+  
+  names(correlation_table) <- as.character(seq_along(vars))
+  
+  correlation_table <- dplyr::bind_cols(
+    tibble::tibble(
+      Variable = paste0(seq_along(vars), ". ", vars)
+    ),
+    correlation_table
+  )
+  
+  flextable::flextable(correlation_table) %>%
+    flextable::set_caption(
+      caption = flextable::as_paragraph(
+        flextable::as_b(
+          flextable::as_i(caption)
+        )
+      )
+    ) %>%
+    flextable::align(
+      j = "Variable",
+      align = "left",
+      part = "all"
+    ) %>%
+    flextable::align(
+      j = setdiff(names(correlation_table), "Variable"),
+      align = "center",
+      part = "all"
+    ) %>%
+    flextable::font(
+      fontname = "Times New Roman",
+      part = "all"
+    ) %>%
+    flextable::fontsize(
+      size = 12,
+      part = "all"
+    ) %>%
+    flextable::theme_booktabs() %>%
+    flextable::autofit() %>%
+    flextable::add_footer_lines(values = note) %>%
+    flextable::italic(part = "footer") %>%
+    flextable::fontsize(
+      size = 11,
+      part = "footer"
+    )
+}
+
+apa_within_correlations <- make_apa_correlation_table(
+  dat_analysis = dat_analysis,
+  level = "within",
+  table_number = "Tabelle 2"
+)
+
+apa_between_correlations <- make_apa_correlation_table(
+  dat_analysis = dat_analysis,
+  level = "between",
+  table_number = "Tabelle 3"
+)
+
+apa_within_correlations
+apa_between_correlations
+
+flextable::save_as_docx(
+  `Tabelle 2. Within-Person-Korrelationen` = apa_within_correlations,
+  `Tabelle 3. Between-Person-Korrelationen` = apa_between_correlations,
+  path = "tabellen_2_3_korrelationen.docx"
+)
+```
+
+
+```{message=FALSE, warning=FALSE}
+#' Erstellt eine Powerkurve
+#'
+#' Berechnet mit ema.powercurve eine Powerkurve.
+#' Die Anzahl der Personen, die mittlere Anzahl gültiger Beobachtungen pro
+#' Person und die Intraklassenkorrelation werden aus dem Analysedatensatz
+#' berechnet. Die ICC wird aus einem Nullmodell mit zufälligem Interzept auf
+#' Personenebene geschätzt.
+#' @param dat_analysis Analysedatensatz mit den für die Poweranalyse relevanten
+#'   Beobachtungen.
+#'
+#' @return Eine Powerkurve
+
+# Paket laden
+ema_powercurve_result <- EMAtools::ema.powercurve(
+  NumbPart = n_persons,
+  NumbResp = round(mean_observations_per_person),
+  Est_ICC = icc
+)
+
+# Daten aus dem ema.powercurve-Plot extrahieren
+ema_powercurve_build <- ggplot2::ggplot_build(ema_powercurve_result)
+
+curve_layer <- which(
+  vapply(
+    ema_powercurve_build$data,
+    function(x) {
+      all(c("x", "y", "group") %in% names(x)) && nrow(x) > 10
+    },
+    logical(1)
+  )
+)[1]
+
+ema_powercurve_data <- ema_powercurve_build$data[[curve_layer]] %>%
+  dplyr::as_tibble() %>%
+  dplyr::select(
+    x,
+    y,
+    group
+  ) %>%
+  dplyr::distinct()
+
+# Effektstärken anhand der Powerhöhe zuordnen
+effect_labels <- ema_powercurve_data %>%
+  dplyr::group_by(group) %>%
+  dplyr::summarise(
+    max_power = max(y, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::arrange(dplyr::desc(max_power)) %>%
+  dplyr::mutate(
+    effektstaerke = factor(
+      c(
+        "Groß (d = 0.8)",
+        "Mittel (d = 0.5)",
+        "Klein (d = 0.2)"
+      ),
+      levels = c(
+        "Groß (d = 0.8)",
+        "Mittel (d = 0.5)",
+        "Klein (d = 0.2)"
+      )
+    )
+  )
+
+ema_powercurve_data <- ema_powercurve_data %>%
+  dplyr::left_join(
+    effect_labels,
+    by = "group"
+  )
+
+# Vertikale Linien für Antwortquoten
+max_responses <- round(mean_observations_per_person)
+
+completion_rate_data <- tibble::tibble(
+  xintercept = c(
+    max_responses,
+    max_responses * 0.50,
+    max_responses * 0.75
+  ),
+  antwortquote = factor(
+    c(
+      "100 %",
+      "50 %",
+      "75 %"
+    ),
+    levels = c(
+      "100 %",
+      "50 %",
+      "75 %"
+    )
+  )
+)
+
+# Plot mit deutschen Labels neu erstellen
+ema_powercurve_plot_de <- ggplot2::ggplot(
+  ema_powercurve_data,
+  ggplot2::aes(
+    x = x,
+    y = y,
+    color = effektstaerke,
+    group = effektstaerke
+  )
+) +
+  ggplot2::geom_line(
+    linewidth = 1
+  ) +
+  ggplot2::geom_vline(
+    data = completion_rate_data,
+    ggplot2::aes(
+      xintercept = xintercept,
+      linetype = antwortquote
+    ),
+    color = "grey60",
+    linewidth = 0.6
+  ) +
+  ggplot2::scale_color_manual(
+    name = "Effektstärke",
+    values = c(
+      "Groß (d = 0.8)" = "red",
+      "Mittel (d = 0.5)" = "blue",
+      "Klein (d = 0.2)" = "green"
+    )
+  ) +
+  ggplot2::scale_linetype_manual(
+    name = "Antwortquote",
+    values = c(
+      "100 %" = "solid",
+      "50 %" = "dotted",
+      "75 %" = "dashed"
+    )
+  ) +
+  ggplot2::labs(
+    x = paste0(
+      "Antworten pro Person (n = ",
+      n_persons,
+      " Personen)"
+    ),
+    y = "Power (1 - beta)"
+  ) +
+  ggplot2::theme_classic(
+    base_size = 12
+  )
+
+ema_powercurve_plot_de
+```
+
+```{message=FALSE, warning=FALSE}
+#' Speichert die Powerkurve als png
+ggplot2::ggsave(
+  filename = "ema_powercurve_deutsch.png",
+  plot = ema_powercurve_plot_de,
+  width = 18,
+  height = 11,
+  units = "cm",
+  dpi = 300
+)
+```
+
+
+
+

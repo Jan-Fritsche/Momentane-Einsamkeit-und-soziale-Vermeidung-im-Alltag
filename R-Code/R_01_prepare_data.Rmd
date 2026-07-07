@@ -1,0 +1,260 @@
+---
+title: "R/01_prepare_data"
+author: "Jan Fritsche"
+date: "2026-06-10"
+output: html_document
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+# Benötigte Pakete
+needed_packages <- c("readr", "dplyr", "tidyr")
+
+# Fehlende Pakete installieren
+for (pkg in needed_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg)
+  }
+}
+
+# Pakete laden
+library(readr)
+library(dplyr)
+library(tidyr)
+```
+
+
+```{message=FALSE, warning=FALSE}
+#' Datensatz einlesen
+#'
+#' Liest den Rohdatensatz aus einer CSV-Datei ein.
+#'
+#' @param path Pfad zur CSV-Datei.
+#'
+#' @return Ein Tibble mit den Rohdaten.
+read_data <- function(path) {
+  read_csv(
+    file = path,
+    na = c("", "NA", "NaN"),
+    show_col_types = FALSE
+  )
+}
+
+dat_raw <- read_data("Jan_BA (1).csv")
+
+
+```
+
+```{message=FALSE, warning=FALSE}
+#' Datensatz vorbereiten
+#'
+#' Bereitet zentrale Strukturvariablen für die Mehrebenenanalyse vor.
+#' Die Personen-ID wird als Faktor gespeichert, da Tagesmessungen innerhalb
+#' von Personen verschachtelt sind.
+#'
+#' @param dat Rohdatensatz.
+#'
+#' @return Vorbereiteter Datensatz.
+prepare_data <- function(dat) {
+  dat %>%
+    mutate(
+      subj_id = factor(subj_id),
+      round = as.integer(round),
+      day_in_round = as.integer(day_in_round)
+    ) %>%
+    arrange(subj_id, round, day_in_round)
+}
+
+dat <- prepare_data(dat_raw)
+
+
+```
+
+```{message=FALSE, warning=FALSE}
+#' Berechnet maximal mögliche Analysebeobachtungen
+#'
+#' @param dat Datensatz vor dem Complete-Case-Filter.
+#' @param n_days_analysis Anzahl analysierbarer Tage pro Runde.
+#'
+#' @return Tibble mit maximal möglichen Analysebeobachtungen.
+calculate_possible_observations <- function(dat, n_days_analysis = 8) {
+  n_persons <- dplyr::n_distinct(dat$subj_id)
+  n_rounds <- dplyr::n_distinct(dat$round)
+  n_possible <- n_persons * n_rounds * n_days_analysis
+
+  tibble::tibble(
+    n_persons = n_persons,
+    n_rounds = n_rounds,
+    n_days_analysis = n_days_analysis,
+    n_observations_possible = n_possible
+  )
+}
+
+possible_observations <- calculate_possible_observations(dat)
+
+possible_observations
+```
+
+```{message=FALSE, warning=FALSE}
+#' Analysedatensatz erstellen
+#'
+#' Prüft zunächst fehlende Werte auf den zentralen Modellvariablen und entfernt
+#' anschließend Fälle mit fehlenden Werten auf diesen Variablen.
+#'
+#' @param dat Vorbereiteter Datensatz.
+#'
+#' @return Eine Liste mit Missing-Tabelle und den Analysedatensatz.
+make_analysis_data <- function(dat) {
+  model_vars <- c(
+    "avoid_day",
+    "avoid_day_lag1",
+    "loneliness_mean_day_lag1_round_wp",
+    "loneliness_mean_day_lag1_round_bp",
+    "rejection_sensitivity_z"
+  )
+
+  missing_table <- dat %>%
+    summarise(
+      across(
+        all_of(model_vars),
+        list(
+          n_missing = ~ sum(is.na(.x)),
+          pct_missing = ~ round(mean(is.na(.x)) * 100, 2)
+        )
+      )
+    ) %>%
+    pivot_longer(
+      cols = everything(),
+      names_to = c("variable", ".value"),
+      names_pattern = "(.+)_(n_missing|pct_missing)"
+    )
+
+  dat_analysis <- dat %>%
+    filter(if_all(all_of(model_vars), ~ !is.na(.x))) %>%
+    droplevels()
+
+  list(
+    missing_table = missing_table,
+    dat_analysis = dat_analysis
+  )
+}
+
+analysis_prep <- make_analysis_data(dat)
+
+analysis_prep$missing_table
+
+dat_analysis <- analysis_prep$dat_analysis
+```
+
+
+```{message=FALSE, warning=FALSE}
+#' Alter und Geschlecht für spätere Deskriptivstatistiken
+#' vorbereiten
+#'
+#' Erstellt vorbereitete Variablen für die spätere deskriptive
+#' Auswertung.
+#' `age` wird als numerische Variable gespeichert. Zusätzlich wird eine
+#' gelabelte Geschlechtsvariable `gender_label` erstellt, ohne
+#' die ursprüngliche
+#' Variable `gender` zu überschreiben.
+#'
+#' @param data Analysedatensatz.
+#'
+#' @return Analysedatensatz mit vorbereiteten Variablen für Alter und Geschlecht.
+prepare_age_gender_variables <- function(data) {
+  
+  data %>%
+    mutate(
+      age = as.numeric(age),
+      gender_label = case_when(
+        gender == 1 ~ "weiblich",
+        gender == 2 ~ "männlich",
+        gender == 3 ~ "divers",
+        TRUE ~ NA_character_
+      )
+    )
+}
+
+dat_analysis <- prepare_age_gender_variables(dat_analysis)
+```
+
+
+```{message=FALSE, warning=FALSE}
+#' Analysedatensatz zusammenfassen
+#'
+#' Erstellt eine kurze Übersicht über den Analysedatensatz nach dem Ausschluss
+#' von Beobachtungen mit fehlenden Werten auf den zentralen Modellvariablen.
+#'
+#' @param dat_analysis Analysedatensatz mit vollständigen Fällen für die
+#'   zentralen Modellvariablen.
+#'
+#' @return Ein Tibble mit Anzahl der Beobachtungen, Personen und Runden.
+summarise_analysis_data <- function(dat_analysis) {
+  dat_analysis %>%
+    summarise(
+      n_beobachtungen = n(),
+      n_personen = n_distinct(subj_id),
+      n_runden = n_distinct(round)
+    ) %>%
+    tibble::as_tibble()
+}
+
+#' Beobachtungen pro Tag innerhalb der Erhebungsrunden zählen
+#'
+#' Zählt, wie viele Beobachtungen pro Tag innerhalb der Erhebungsrunden im
+#' Analysedatensatz enthalten sind.
+#'
+#' @param dat_analysis Analysedatensatz mit vollständigen Fällen für die
+#'   zentralen Modellvariablen.
+#'
+#' @return Ein Tibble mit der Anzahl der Beobachtungen pro Tag.
+count_days_in_analysis_data <- function(dat_analysis) {
+  dat_analysis %>%
+    count(day_in_round, name = "n_beobachtungen") %>%
+    tibble::as_tibble()
+}
+
+analysis_summary <- summarise_analysis_data(dat_analysis)
+day_counts <- count_days_in_analysis_data(dat_analysis)
+
+analysis_summary
+day_counts
+```
+
+```{message=FALSE, warning=FALSE}
+#' Berechnet Compliance im Analysedatensatz
+#'
+#' @param dat_analysis Finaler Analysedatensatz.
+#' @param possible_observations Tibble mit maximal möglichen Beobachtungen.
+#'
+#' @return Tibble mit Beobachtungen als Anzahl und Prozent.
+calculate_compliance <- function(dat_analysis, possible_observations) {
+  n_actual <- nrow(dat_analysis)
+  n_possible <- possible_observations$n_observations_possible
+
+  tibble::tibble(
+    n_observations_actual = n_actual,
+    n_observations_possible = n_possible,
+    n_observations_missing = n_possible - n_actual,
+    compliance_percent = round(n_actual / n_possible * 100, 2)
+  )
+}
+
+analysis_compliance <- calculate_compliance(
+  dat_analysis = dat_analysis,
+  possible_observations = possible_observations
+)
+
+analysis_compliance
+```
+
+```{message=FALSE, warning=FALSE}
+#' Analysedatensatz speichern 
+
+save_analysis_data <- function(dat_analysis, path = "dat_analysis.rds") {
+  saveRDS(dat_analysis, file = path)
+  invisible(path)
+}
+
+save_analysis_data(dat_analysis, "dat_analysis.rds")
+```
+

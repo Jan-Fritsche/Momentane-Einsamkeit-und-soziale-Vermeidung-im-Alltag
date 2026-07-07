@@ -1,0 +1,652 @@
+---
+title: "R/04_plots"
+author: "Jan Fritsche"
+date: "2026-06-11"
+output: html_document
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+# Benötigte Pakete
+needed_packages <- c(
+  "dplyr",
+  "tidyr",
+  "tibble",
+  "ggplot2",
+  "lmerTest",
+  "performance", "sjPlot", "patchwork"
+
+)
+
+# Fehlende Pakete installieren
+for (pkg in needed_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg)
+  }
+}
+
+# Pakete laden
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(ggplot2)
+library(lmerTest)
+library(performance)
+library(sjPlot)
+library(patchwork)
+```
+
+```{message=FALSE, warning=FALSE}
+#' Analysedatensatz laden
+#'
+#' Lädt den vorbereiteten Analysedatensatz aus der gespeicherten RDS-Datei.
+#'
+#' @param path Pfad zur gespeicherten RDS-Datei.
+#'
+#' @return Der vorbereitete Analysedatensatz.
+load_analysis_data <- function(
+  path = "D:/Studium/B.Sc/LMU/BA Arbeit/Daten/Lonliness and Rejection Sensitivity/dat_analysis.rds"
+) {
+  readRDS(path)
+}
+
+dat_analysis <- load_analysis_data()
+
+```
+
+```{message=FALSE, warning=FALSE}
+#' Plottet Beobachtungen pro Person
+#'
+#' @param person_compliance Tibble mit Beobachtungen pro Person.
+#'
+#' @return ggplot-Objekt mit der Anzahl vollstädnigr Beobachtungen pro Person.
+plot_person_compliance <- function(person_compliance,
+                                   fill_color = "#4E79A7") {
+  plot_data <- person_compliance %>%
+    dplyr::count(n_observations, name = "n_persons") %>%
+    tidyr::complete(
+      n_observations = 0:max(person_compliance$n_possible),
+      fill = list(n_persons = 0)
+    )
+
+  ggplot2::ggplot(
+    plot_data,
+    ggplot2::aes(x = n_observations, y = n_persons)
+  ) +
+    ggplot2::geom_col(
+      fill = fill_color,
+      color = "black",
+      linewidth = 0.25
+    ) +
+    ggplot2::scale_x_continuous(
+      breaks = 0:max(person_compliance$n_possible)
+    ) +
+    ggplot2::scale_y_continuous(
+      expand = ggplot2::expansion(mult = c(0, 0.05))
+    ) +
+    ggplot2::labs(
+      x = "Anzahl vollständiger Analysebeobachtungen pro Person",
+      y = "Anzahl Personen"
+    ) +
+    ggplot2::theme_classic(base_size = 12, base_family = "serif") +
+    ggplot2::theme(
+      axis.title = ggplot2::element_text(size = 12),
+      axis.text = ggplot2::element_text(size = 11),
+      plot.margin = ggplot2::margin(10, 10, 10, 10)
+    )
+}
+person_compliance_plot <- plot_person_compliance(person_compliance)
+
+person_compliance_plot
+```
+
+```{message=FALSE, warning=FALSE}
+#' Plottet die Verteilung des Outcomes
+#'
+#' @param dat_analysis Analysedatensatz.
+#'
+#'
+#' @return ggplot-Objekt mit der Verteilung von Sozialer Vermeidung
+plot_outcome_distribution <- function(dat_analysis,
+                                      fill_color = "#4E79A7") {
+  ggplot2::ggplot(
+    dat_analysis,
+    ggplot2::aes(x = avoid_day)
+  ) +
+    ggplot2::geom_histogram(
+      binwidth = 5,
+      boundary = 0,
+      fill = fill_color,
+      color = "black",
+      linewidth = 0.25
+    ) +
+    ggplot2::scale_x_continuous(
+      limits = c(0, 100),
+      breaks = seq(0, 100, 10)
+    ) +
+    ggplot2::scale_y_continuous(
+      expand = ggplot2::expansion(mult = c(0, 0.05))
+    ) +
+    ggplot2::labs(
+      x = "Soziale Vermeidung",
+      y = "Anzahl Beobachtungen"
+    ) +
+    ggplot2::theme_classic(
+      base_size = 12,
+      base_family = "serif"
+    ) +
+    ggplot2::theme(
+      axis.title = ggplot2::element_text(size = 12),
+      axis.text = ggplot2::element_text(size = 11),
+      plot.margin = ggplot2::margin(10, 10, 10, 10)
+    )
+}
+
+Soziale_Vermeidung_distribution_plot <- plot_outcome_distribution(dat_analysis)
+
+Soziale_Vermeidung_distribution_plot
+```
+
+```{message=FALSE, warning=FALSE}
+#' Plottet die Verteilung der Within-Person-Einsamkeit
+#'
+#' Erstellt ein Histogramm für die personenzentrierte Einsamkeit am Vortag
+#' im finalen Analysedatensatz.
+#'
+#' @param dat_analysis Finaler Analysedatensatz.
+#'
+#' @return Ein ggplot-Objekt mit der Verteilung ovn WP-Einsamkeit
+#' 
+plot_loneliness_wp_distribution <- function(dat_analysis,
+                                            fill_color = "#4E79A7") {
+  dat_analysis %>%
+    dplyr::mutate(
+      loneliness_mean_day_lag1_round_wp = as.numeric(
+        loneliness_mean_day_lag1_round_wp
+      )
+    ) %>%
+    ggplot2::ggplot(
+      ggplot2::aes(x = loneliness_mean_day_lag1_round_wp)
+    ) +
+    ggplot2::geom_histogram(
+      binwidth = 0.25,
+      fill = fill_color,
+      color = "black",
+      linewidth = 0.25,
+      na.rm = TRUE
+    ) +
+    ggplot2::scale_y_continuous(
+      breaks = seq(0, 600, 100),
+      expand = ggplot2::expansion(mult = c(0, 0.05))
+    ) +
+    ggplot2::coord_cartesian(
+      ylim = c(0, 600)
+    ) +
+    ggplot2::labs(
+      x = "Einsamkeit am Tag t (Within-Person)",
+      y = "Anzahl Beobachtungen"
+    ) +
+    ggplot2::theme_classic(
+      base_size = 12,
+      base_family = "serif"
+    ) +
+    ggplot2::theme(
+      axis.title = ggplot2::element_text(size = 12),
+      axis.text = ggplot2::element_text(size = 11),
+      plot.margin = ggplot2::margin(10, 10, 10, 10)
+    )
+}
+
+loneliness_wp_distribution_plot <- plot_loneliness_wp_distribution(dat_analysis)
+
+loneliness_wp_distribution_plot
+```
+```{message=FALSE, warning=FALSE}
+#' Plottet die Verteilung der Between-Person-Einsamkeit
+#'
+#' Erstellt ein Histogramm für die Between-Person-Einsamkeit am Vortag.
+#' Die Daten werden innerhalb der Funktion auf eine Zeile pro Person und
+#' Erhebungsrunde reduziert.
+#'
+#' @param dat_analysis Finaler Analysedatensatz.
+#'
+#' @return Ein ggplot-Objekt mit der Verteilung von BP Einsamkeit
+#' 
+plot_loneliness_bp_distribution <- function(dat_analysis,
+                                            fill_color = "#4E79A7") {
+  dat_analysis %>%
+    dplyr::distinct(
+      subj_id,
+      round,
+      loneliness_mean_day_lag1_round_bp
+    ) %>%
+    dplyr::mutate(
+      loneliness_mean_day_lag1_round_bp = as.numeric(
+        loneliness_mean_day_lag1_round_bp
+      )
+    ) %>%
+    ggplot2::ggplot(
+      ggplot2::aes(x = loneliness_mean_day_lag1_round_bp)
+    ) +
+    ggplot2::geom_histogram(
+      binwidth = 0.25,
+      fill = fill_color,
+      color = "black",
+      linewidth = 0.25,
+      na.rm = TRUE
+    ) +
+    ggplot2::scale_x_continuous(
+      breaks = 1:7
+    ) +
+    ggplot2::scale_y_continuous(
+      expand = ggplot2::expansion(mult = c(0, 0.05))
+    ) +
+    ggplot2::coord_cartesian(
+      xlim = c(1, 7)
+    ) +
+    ggplot2::labs(
+      x = "Einsamkeit am Tag t (Between-Person)",
+      y = "Anzahl Personen-Runden"
+    ) +
+    ggplot2::theme_classic(
+      base_size = 12,
+      base_family = "serif"
+    ) +
+    ggplot2::theme(
+      axis.title = ggplot2::element_text(size = 12),
+      axis.text = ggplot2::element_text(size = 11),
+      plot.margin = ggplot2::margin(10, 10, 10, 10)
+    )
+}
+
+loneliness_bp_distribution_plot <- plot_loneliness_bp_distribution(dat_analysis)
+
+loneliness_bp_distribution_plot
+```
+```{message=FALSE, warning=FALSE}
+#' Plottet die Verteilung von Rejection Sensitivity
+#'
+#' Erstellt ein Histogramm für Rejection Sensitivity. Die Daten werden
+#' innerhalb der Funktion auf eine Zeile pro Person reduziert.
+#'
+#' @param dat_analysis Finaler Analysedatensatz.
+#'
+#' @return Ein ggplot-Objekt mit der Verteilung von RS
+plot_rejection_sensitivity_distribution <- function(dat_analysis,
+                                                    fill_color = "#4E79A7") {
+  dat_analysis %>%
+    dplyr::distinct(
+      subj_id,
+      rejection_sensitivity
+    ) %>%
+    dplyr::mutate(
+      rejection_sensitivity = as.numeric(rejection_sensitivity)
+    ) %>%
+    ggplot2::ggplot(
+      ggplot2::aes(x = rejection_sensitivity)
+    ) +
+    ggplot2::geom_histogram(
+      binwidth = 1,
+      fill = fill_color,
+      color = "black",
+      linewidth = 0.25,
+      na.rm = TRUE
+    ) +
+    ggplot2::scale_y_continuous(
+      expand = ggplot2::expansion(mult = c(0, 0.05))
+    ) +
+    ggplot2::labs(
+      x = "Zurückweisungssensitivität",
+      y = "Anzahl Personen"
+    ) +
+    ggplot2::theme_classic(
+      base_size = 12,
+      base_family = "serif"
+    ) +
+    ggplot2::theme(
+      axis.title = ggplot2::element_text(size = 12),
+      axis.text = ggplot2::element_text(size = 11),
+      plot.margin = ggplot2::margin(10, 10, 10, 10)
+    )
+}
+
+rejection_sensitivity_distribution_plot <- plot_rejection_sensitivity_distribution(
+  dat_analysis
+)
+
+rejection_sensitivity_distribution_plot
+```
+```{message=FALSE, warning=FALSE}
+#' Plottet die Verteilung der mittleren täglichen Einsamkeit
+#'
+#' Erstellt ein Histogramm für die mittlere tägliche Einsamkeit im finalen
+#' Analysedatensatz.
+#'
+#' @param dat_analysis Finaler Analysedatensatz.
+#'
+#' @return Ein ggplot-Objekt mit der Verteilung der täglichen Einsamkeit 
+plot_loneliness_mean_day_distribution <- function(dat_analysis,
+                                                  fill_color = "#4E79A7") {
+  dat_analysis %>%
+    dplyr::mutate(
+      loneliness_mean_day = as.numeric(loneliness_mean_day)
+    ) %>%
+    ggplot2::ggplot(
+      ggplot2::aes(x = loneliness_mean_day)
+    ) +
+    ggplot2::geom_histogram(
+      binwidth = 0.25,
+      fill = fill_color,
+      color = "black",
+      linewidth = 0.25,
+      na.rm = TRUE
+    ) +
+    ggplot2::scale_x_continuous(
+      breaks = 1:7
+    ) +
+    ggplot2::scale_y_continuous(
+      breaks = seq(0, 600, 100),
+      expand = ggplot2::expansion(mult = c(0, 0.05))
+    ) +
+    ggplot2::coord_cartesian(
+      xlim = c(1, 7),
+      ylim = c(0, 600)
+    ) +
+    ggplot2::labs(
+      x = "Momentane Einsamkeit an Tag t",
+      y = "Anzahl Beobachtungen"
+    ) +
+    ggplot2::theme_classic(
+      base_size = 12,
+      base_family = "serif"
+    ) +
+    ggplot2::theme(
+      axis.title = ggplot2::element_text(size = 12),
+      axis.text = ggplot2::element_text(size = 11),
+      plot.margin = ggplot2::margin(10, 10, 10, 10)
+    )
+}
+
+loneliness_mean_day_distribution_plot <- plot_loneliness_mean_day_distribution(
+  dat_analysis
+)
+
+loneliness_mean_day_distribution_plot
+```
+
+
+```{message=FALSE, warning=FALSE}
+#' Erstellt eine dreiteilige Abbildung mit den Verteilungen
+#' der mittleren tagesbezogenen Einsamkeit, der
+#' Between-Person-Komponente und der 
+#' Within-Person-Komponente. Die drei bereits erstellten
+#' ggplot-Objekte werden
+#' nebeneinander angeordnet 
+#'
+#' @param loneliness_mean_day_distribution_plot ggplot-Objekt mit der
+#'   Verteilung der mittleren tagesbezogenen Einsamkeit.
+#' @param loneliness_bp_distribution_plot ggplot-Objekt mit der Verteilung der
+#'   Between-Person-Komponente der Einsamkeit.
+#' @param loneliness_wp_distribution_plot ggplot-Objekt mit der Verteilung der
+#'   Within-Person-Komponente der Einsamkeit.
+
+#'
+#' @return Ein einheitliche Verteilungsabbildung
+loneliness_distribution_three_panel_plot <- wrap_plots(
+  loneliness_mean_day_distribution_plot,
+  loneliness_bp_distribution_plot,
+  loneliness_wp_distribution_plot,
+  nrow = 1
+) +
+  plot_annotation(tag_levels = "A") &
+  theme(
+    plot.tag = element_text(face = "bold", size = 12),
+    plot.tag.position = c(0, 1)
+  )
+
+loneliness_distribution_three_panel_plot
+```
+
+```{message=FALSE, warning=FALSE}
+#' Speichert die einheitliche Verteilungsabbildung von Einsamkeit
+#' 
+ggplot2::ggsave(
+  filename = "loneliness_distribution_three_panel_plot.png",
+  plot = loneliness_distribution_three_panel_plot,
+  width = 24,
+  height = 7,
+  units = "cm",
+  dpi = 300
+)
+```
+
+```{message=FALSE, warning=FALSE}
+#' H1-Modell schätzen
+#'
+#' Schätzt ein lineares Mehrebenenmodell mit sozialer Vermeidung als abhängiger
+#' Variable. Prädiktoren sind Within-Person-Einsamkeit am Vortag,
+#' Between-Person-Einsamkeit am Vortag und soziale Vermeidung am Vortag.
+#' Personen werden über einen zufälligen Intercept berücksichtigt.
+#'
+#' @param dat_analysis Analysedatensatz.
+#'
+#' @return Ein geschätztes lmer-Modell.
+fit_h1_model <- function(dat_analysis) {
+  lmerTest::lmer(
+    avoid_day ~
+      loneliness_mean_day_lag1_round_wp +
+      loneliness_mean_day_lag1_round_bp +
+      avoid_day_lag1 +
+      (1 | subj_id),
+    data = dat_analysis,
+    REML = FALSE
+  )
+}
+
+#' H2-Modell schätzen
+#'
+#' Schätzt ein lineares Mehrebenenmodell mit sozialer Vermeidung als abhängiger
+#' Variable. Das Modell enthält Within-Person-Einsamkeit am Vortag,
+#' Between-Person-Einsamkeit am Vortag, Rejection Sensitivity, die Interaktion
+#' zwischen Within-Person-Einsamkeit und Rejection Sensitivity sowie soziale
+#' Vermeidung am Vortag.
+#'
+#' Personen werden über einen zufälligen Intercept berücksichtigt.
+#'
+#' @param dat_analysis Analysedatensatz.
+#'
+#' @return Ein geschätztes lmer-Modell.
+fit_h2_model <- function(dat_analysis) {
+  lmerTest::lmer(
+    avoid_day ~
+      loneliness_mean_day_lag1_round_wp +
+      loneliness_mean_day_lag1_round_bp +
+      rejection_sensitivity_z +
+      loneliness_mean_day_lag1_round_wp:rejection_sensitivity_z +
+      avoid_day_lag1 +
+      (1 | subj_id),
+    data = dat_analysis,
+    REML = FALSE
+  )
+}
+
+model_h1 <- fit_h1_model(dat_analysis)
+model_h2 <- fit_h2_model(dat_analysis)
+```
+
+```{message=FALSE, warning=FALSE}
+#' Fixed Effects für Plot aufbereiten
+#'
+#' Extrahiert Fixed Effects und 95%-Konfidenzintervalle aus einem geschätzten
+#' Mehrebenenmodell und bereitet sie für einen Koeffizientenplot auf.
+#'
+#' @param model Geschätztes lmer-Modell.
+#' @param model_name Name des Modells.
+#'
+#' @return Ein Tibble mit Fixed Effects und Konfidenzintervallen.
+prepare_fixed_effects_for_plot <- function(model, model_name) {
+  fixed_effects <- as.data.frame(summary(model)$coefficients) %>%
+    tibble::rownames_to_column("term")
+  
+  confidence_intervals <- as.data.frame(
+    confint(model, parm = "beta_", method = "Wald")
+  ) %>%
+    tibble::rownames_to_column("term") %>%
+    rename(
+      CI_low = `2.5 %`,
+      CI_high = `97.5 %`
+    )
+  
+  fixed_effects %>%
+    left_join(confidence_intervals, by = "term") %>%
+    rename(
+      b = Estimate,
+      SE = `Std. Error`,
+      t = `t value`,
+      p = `Pr(>|t|)`
+    ) %>%
+    mutate(
+      model = model_name,
+      predictor = case_when(
+        term == "loneliness_mean_day_lag1_round_wp" ~
+          "Einsamkeit am Vortag\n(Within-Person)",
+        term == "loneliness_mean_day_lag1_round_bp" ~
+          "Einsamkeit am Vortag\n(Between-Person)",
+        term == "rejection_sensitivity_z" ~
+          "Rejection Sensitivity",
+        term == "avoid_day_lag1" ~
+          "Soziale Vermeidung\nam Vortag",
+        term == "loneliness_mean_day_lag1_round_wp:rejection_sensitivity_z" ~
+          "Within-Person-Einsamkeit ×\nRejection Sensitivity",
+        TRUE ~ term
+      )
+    ) %>%
+    filter(term != "(Intercept)")
+}
+
+#' Fixed-Effects-Plot erstellen
+#'
+#' Erstellt einen Koeffizientenplot für H1 und H2. Punkte zeigen die
+#' unstandardisierten Regressionskoeffizienten. Linien zeigen 95%-
+#' Konfidenzintervalle.
+#'
+#' @param model_h1 Geschätztes H1-Modell.
+#' @param model_h2 Geschätztes H2-Modell.
+#'
+#' @return Ein ggplot-Objekt.
+plot_fixed_effects <- function(model_h1, model_h2) {
+  plot_data <- bind_rows(
+    prepare_fixed_effects_for_plot(model_h1, "H1"),
+    prepare_fixed_effects_for_plot(model_h2, "H2")
+  )
+  
+  predictor_order <- c(
+    "Within-Person-Einsamkeit ×\nRejection Sensitivity",
+    "Soziale Vermeidung\nam Vortag",
+    "Rejection Sensitivity",
+    "Einsamkeit am Vortag\n(Between-Person)",
+    "Einsamkeit am Vortag\n(Within-Person)"
+  )
+  
+  plot_data <- plot_data %>%
+    mutate(
+      predictor = factor(predictor, levels = predictor_order)
+    )
+  
+  ggplot(plot_data, aes(x = b, y = predictor)) +
+    geom_vline(
+      xintercept = 0,
+      linetype = "dashed"
+    ) +
+    geom_pointrange(
+      aes(xmin = CI_low, xmax = CI_high),
+      linewidth = 0.7
+    ) +
+    facet_wrap(~ model) +
+    labs(
+      title = "Abbildung X: Fixed Effects der H1- und H2-Modelle",
+      x = "Unstandardisierter Koeffizient b",
+      y = NULL,
+      caption = "Anmerkung. Punkte zeigen unstandardisierte Koeffizienten. Linien zeigen 95%-Konfidenzintervalle."
+    ) +
+    theme_minimal()
+}
+
+fixed_effects_plot <- plot_fixed_effects(model_h1, model_h2)
+
+print(fixed_effects_plot)
+```
+
+```{message=FALSE, warning=FALSE}
+#' H1-Vorhersageplot erstellen
+#'
+#' Erstellt einen Plot der vorhergesagten sozialen Vermeidung in Abhängigkeit
+#' von der Within-Person-Einsamkeit am Vortag. Der Plot basiert auf dem
+#' geschätzten H1-Modell.
+#'
+#' @param model_h1 Geschätztes H1-Modell.
+#'
+#' @return Ein ggplot-Objekt.
+plot_h1_prediction <- function(model_h1) {
+  sjPlot::plot_model(
+    model = model_h1,
+    type = "pred",
+    terms = "loneliness_mean_day_lag1_round_wp",
+    title = "",
+    axis.title = c(
+      "Einsamkeit am Tag t (Within-Person)",
+      "Vorhergesagte soziale Vermeidung am Folgemorgen"
+    )
+  ) +
+    theme_minimal()
+}
+
+h1_prediction_plot <- plot_h1_prediction(model_h1)
+
+print(h1_prediction_plot)
+```
+
+```{message=FALSE, warning=FALSE}
+#' H2-Interaktionsplot erstellen
+#'
+#' Erstellt einen Plot der vorhergesagten sozialen Vermeidung in Abhängigkeit
+#' von der Within-Person-Einsamkeit am Vortag und Rejection Sensitivity. Die
+#' Rejection Sensitivity wird bei niedriger, mittlerer und hoher Ausprägung
+#' dargestellt.
+#'
+#' @param model_h2 Geschätztes H2-Modell.
+#'
+#' @return Ein ggplot-Objekt.
+plot_h2_interaction <- function(model_h2) {
+  sjPlot::plot_model(
+    model = model_h2,
+    type = "pred",
+    terms = c(
+      "loneliness_mean_day_lag1_round_wp",
+      "rejection_sensitivity_z [-1,0,1]"
+    ),
+    title = "",
+    axis.title = c(
+      "Einsamkeit an Tag t (Within-Person)",
+      "Vorhergesagte soziale Vermeidung am Morgen von Tag t + 1"
+    ),
+    legend.title = "Zurückweisungssensitivität"
+  ) +
+    theme_minimal()
+}
+
+h2_interaction_plot <- plot_h2_interaction(model_h2)
+
+print(h2_interaction_plot)
+```
+
+```{message=FALSE, warning=FALSE}
+#' Speichert den H2-Interaktionsplot als png Datei
+ggplot2::ggsave(
+  filename = "abbildung_h2_within_person_vorhersageplot.png",
+  plot = h2_interaction_plot,
+  width = 6.5,
+  height = 5.0,
+  dpi = 300
+)
+```
+
