@@ -1,0 +1,38 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: >-
+  R-Code zur Bachelorarbeit über momentane Einsamkeit,
+  soziale Vermeidung und Zurückweisungssensitivität in einem
+  EMA-Design mit linearen Mehrebenenmodellen
+message: >-
+  If you use this dataset, please cite it using the metadata
+  from this file.
+type: dataset
+authors:
+  - given-names: Jan
+    family-names: Fritsche
+    email: Jan.Fritsche@campus.lmu.de
+    affiliation: Student @ Ludwig-Maximilians-Universität München
+    orcid: 'https://orcid.org/0009-0009-5606-6483'
+identifiers:
+  - type: doi
+    value: 10.17605/OSF.IO/CH2BK
+    description: >-
+      Bei dieser Bachelorarbeit handelt es sich um eine
+      Sekundäranalyse einer längsschnittlichen EMA-Studie
+      mit Erstsemesterstudierenden von Merscher, A., & Weiß,
+      M. (2025, October 31)
+abstract: >
+  Eine Bachelorarbeit welche den Zusammenhang von Einsamkeit
+  und Sozialer Vermeidung sowie deren Interaktion mit
+  Zurückweisungssensitivität in einem EMA-Design testet 
+keywords:
+  - 'Momentane Einsamkeit '
+  - soziale Vermeidung
+  - Zurückweisungssensitivität
+  - EMA-Design
+license: CC-BY-4.0
+version: 1.0.0
+date-released: '2026-07-07'
